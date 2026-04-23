@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { QRCodeCanvas } from 'qrcode.react';
 import { GoogleGenAI } from "@google/genai";
@@ -73,7 +73,7 @@ import {
   Cake,
   Info,
   Calendar,
-  ExternalLink
+  ExternalLink,
 } from "lucide-react";
 
 interface Order {
@@ -181,6 +181,22 @@ interface Chat {
   }[];
 }
 
+interface Permission {
+  name: string;
+  isSystem: boolean;
+  description: string;
+  slug: string;
+}
+
+interface Role {
+  name: string;
+  isSystem: boolean;
+  description: string;
+  slug: string;
+  panelAccess: boolean;
+  permissions: string[]; // slugs
+}
+
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(() => localStorage.getItem("app_logo"));
@@ -197,9 +213,43 @@ export default function App() {
       cardBg: "#1e293b"
     };
   });
+
+  const [permissions, setPermissions] = useState<Permission[]>([
+    { name: "Connections", isSystem: true, description: "Manage WhatsApp and Messenger channel accounts (credentials, labels, active state).", slug: "connections.manage" },
+    { name: "Employees", isSystem: true, description: "Assign roles to team members.", slug: "employees.manage" },
+    { name: "Inbox", isSystem: true, description: "View and reply in the unified chats inbox.", slug: "inbox.access" },
+    { name: "Integration settings", isSystem: true, description: "View webhook URLs and integration shortcuts on Settings.", slug: "settings.integrations" },
+    { name: "LinkedIn", isSystem: true, description: "Connect and configure LinkedIn professional profiles.", slug: "linkedin.manage" },
+    { name: "Messenger", isSystem: true, description: "Connect and configure Facebook Messenger.", slug: "messenger.manage" },
+    { name: "Permissions", isSystem: true, description: "Create and edit permission definitions.", slug: "permissions.manage" },
+    { name: "Roles", isSystem: true, description: "Create and edit roles and their permissions.", slug: "roles.manage" },
+    { name: "TikTok", isSystem: true, description: "Connect and configure TikTok content accounts.", slug: "tiktok.manage" },
+    { name: "WhatsApp", isSystem: true, description: "Connect and configure WhatsApp Cloud API.", slug: "whatsapp.manage" },
+    { name: "X (Twitter)", isSystem: true, description: "Connect and configure X (formerly Twitter) accounts.", slug: "x.manage" },
+  ]);
+
+  const [roles, setRoles] = useState<Role[]>([
+    { 
+      name: "Administrator", 
+      isSystem: true, 
+      description: "Full access to messaging tools, team settings, and role management.", 
+      slug: "admin", 
+      panelAccess: true, 
+      permissions: permissions.map(p => p.slug)
+    },
+    { 
+      name: "Agent", 
+      isSystem: true, 
+      description: "Standard team member without admin panel access.", 
+      slug: "agent", 
+      panelAccess: false, 
+      permissions: ["inbox.access"]
+    }
+  ]);
+
   const [employees, setEmployees] = useState<Employee[]>([
-    { id: 1, name: "Admin", email: "admin@example.com", verified: true, roles: ["Administrator"], status: "Yes", joinedDate: "Apr 18, 2026", avatar: "A" },
-    { id: 2, name: "Agent", email: "agent@example.com", verified: true, roles: ["Agent"], status: "Yes", joinedDate: "Apr 18, 2026", avatar: "A" }
+    { id: 1, name: "Admin", email: "admin@example.com", verified: true, roles: ["admin"], status: "Yes", joinedDate: "Apr 18, 2026", avatar: "A" },
+    { id: 2, name: "Agent", email: "agent@example.com", verified: true, roles: ["agent"], status: "Yes", joinedDate: "Apr 18, 2026", avatar: "A" }
   ]);
 
   React.useEffect(() => {
@@ -315,6 +365,10 @@ export default function App() {
     setAppColors={setAppColors}
     employees={employees}
     setEmployees={setEmployees}
+    roles={roles}
+    setRoles={setRoles}
+    permissions={permissions}
+    setPermissions={setPermissions}
   />;
 }
 
@@ -329,7 +383,11 @@ function Dashboard({
   appColors,
   setAppColors,
   employees,
-  setEmployees
+  setEmployees,
+  roles,
+  setRoles,
+  permissions,
+  setPermissions
 }: { 
   onLogout: () => void;
   logoUrl: string | null;
@@ -342,6 +400,10 @@ function Dashboard({
   setAppColors: (colors: any) => void;
   employees: Employee[];
   setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>;
+  roles: Role[];
+  setRoles: React.Dispatch<React.SetStateAction<Role[]>>;
+  permissions: Permission[];
+  setPermissions: React.Dispatch<React.SetStateAction<Permission[]>>;
 }) {
   const [currentView, setCurrentView] = useState("Home");
   const [facebookAccessToken, setFacebookAccessToken] = useState<string>("");
@@ -520,13 +582,13 @@ function Dashboard({
     { icon: <Settings className="w-5 h-5" />, label: "Settings" },
   ];
 
-  const stats = [
-    { label: "CONVERSATIONS", value: chats.length.toString() },
-    { label: "MESSAGES STORED", value: chats.reduce((acc, c) => acc + c.messages.length, 0).toString() },
-    { label: "TODAY", value: chats.filter(c => c.time.includes('AM') || c.time.includes('PM') || c.time === 'Just now').length.toString(), sub: "Inbound & outbound" },
-    { label: "WHATSAPP THREADS", value: chats.filter(c => c.platform === 'whatsapp').length.toString() },
-    { label: "MESSENGER THREADS", value: chats.filter(c => c.platform === 'messenger' || c.platform === 'facebook').length.toString() },
-    { label: "ASSIGNED TO YOU", value: chats.filter(c => c.assignedTo === 'Admin').length.toString() },
+  const stats: { label: string, value: string, sub?: string }[] = [
+    { label: "CONVERSATIONS", value: chats.length.toString(), sub: "Total inbox threads" },
+    { label: "EMPLOYEES", value: employees.length.toString(), sub: "Active team members" },
+    { label: "ROLES DEFINED", value: roles.length.toString(), sub: "System & custom roles" },
+    { label: "WHATSAPP THREADS", value: chats.filter(c => c.platform === 'whatsapp').length.toString(), sub: "Connected via Cloud API" },
+    { label: "MESSENGER THREADS", value: chats.filter(c => c.platform === 'messenger' || c.platform === 'facebook').length.toString(), sub: "Facebook Page syncing" },
+    { label: "ORDERS", value: orders.length.toString(), sub: "Total processed sales" },
   ];
 
   return (
@@ -703,18 +765,18 @@ function Dashboard({
                       color="bg-sky-500/10 text-sky-400"
                     />
                     <ShortcutCard 
-                      icon={<Settings className="w-6 h-6" />} 
-                      title="Settings" 
-                      desc="Notifications & appearance" 
-                      onClick={() => setCurrentView("Settings")}
-                      color="bg-pink-500/10 text-pink-400"
+                      icon={<Users className="w-6 h-6" />} 
+                      title="Employees" 
+                      desc="Manage team members" 
+                      onClick={() => setCurrentView("Employees")}
+                      color="bg-rose-500/10 text-rose-400"
                     />
                     <ShortcutCard 
-                      icon={<User className="w-6 h-6" />} 
-                      title="Profile" 
-                      desc="Account & security" 
-                      onClick={() => setCurrentView("Profile")}
-                      color="bg-purple-500/10 text-purple-400"
+                      icon={<Shield className="w-6 h-6" />} 
+                      title="Roles" 
+                      desc="RBAC & permissions" 
+                      onClick={() => setCurrentView("Roles")}
+                      color="bg-indigo-500/10 text-indigo-400"
                     />
                   </div>
                   
@@ -799,6 +861,7 @@ function Dashboard({
                 employees={employees} 
                 chats={chats}
                 setChats={setChats}
+                facebookAccessToken={facebookAccessToken}
               />
             ) : currentView === "WhatsApp" ? (
               <WhatsAppView 
@@ -838,11 +901,23 @@ function Dashboard({
                 onSuccess={() => setCurrentView("Connections")} 
               />
             ) : currentView === "Employees" ? (
-              <EmployeesView employees={employees} setEmployees={setEmployees} />
+              <EmployeesView 
+                employees={employees} 
+                setEmployees={setEmployees} 
+                roles={roles}
+              />
             ) : currentView === "Roles" ? (
-              <RolesView />
+              <RolesView 
+                roles={roles} 
+                setRoles={setRoles} 
+                employees={employees} 
+                permissions={permissions}
+              />
             ) : currentView === "Permissions" ? (
-              <PermissionsView />
+              <PermissionsView 
+                permissions={permissions} 
+                setPermissions={setPermissions} 
+              />
             ) : currentView === "Orders & Leads" ? (
               <OrdersLeadsView orders={orders} leads={leads} />
             ) : currentView === "Manual Migration" ? (
@@ -946,14 +1021,38 @@ function ShortcutCard({ icon, title, desc, color, onClick }: ShortcutCardProps) 
 
 function ProfileView() {
   const [isEditing, setIsEditing] = useState(false);
-  const [profile, setProfile] = useState({
-    name: "Admin User",
-    email: "admin@example.com",
-    role: "Super Admin",
-    phone: "+8801700000000",
-    joinDate: "January 12, 2024",
-    bio: "Head of Operations at OmniInbox. Managing multi-channel messaging workflows and AI-powered automation strategies."
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem("user_profile");
+    return saved ? JSON.parse(saved) : {
+      name: "Admin User",
+      email: "admin@example.com",
+      role: "Super Admin",
+      phone: "+8801700000000",
+      joinDate: "January 12, 2024",
+      bio: "Head of Operations at OmniInbox. Managing multi-channel messaging workflows and AI-powered automation strategies.",
+      avatar: null as string | null
+    };
   });
+
+  const [editData, setEditData] = useState(profile);
+
+  const handleSave = () => {
+    setProfile(editData);
+    localStorage.setItem("user_profile", JSON.stringify(editData));
+    setIsEditing(false);
+    alert("Profile updated successfully!");
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setEditData({ ...editData, avatar: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   return (
     <motion.div
@@ -965,36 +1064,91 @@ function ProfileView() {
         <div className="h-32 bg-gradient-to-r from-rose-600 to-purple-700 opacity-20"></div>
         <div className="px-10 pb-10">
           <div className="flex flex-col md:flex-row items-end justify-between gap-6 -mt-12 mb-10">
-            <div className="flex items-end gap-6">
-              <div className="w-32 h-32 rounded-[2rem] bg-rose-600 border-4 border-[#1e293b] flex items-center justify-center text-5xl font-black text-white shadow-2xl">
-                {profile.name[0]}
+            <div className="flex items-end gap-6 relative group">
+              <div className="relative">
+                <div className="w-32 h-32 rounded-[2rem] bg-rose-600 border-4 border-[#1e293b] flex items-center justify-center text-5xl font-black text-white shadow-2xl overflow-hidden">
+                  {editData.avatar ? (
+                    <img src={editData.avatar} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    profile.name[0]
+                  )}
+                </div>
+                {isEditing && (
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-[2rem] cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="w-8 h-8 text-white" />
+                    <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+                  </label>
+                )}
               </div>
               <div className="mb-2">
-                <h3 className="text-3xl font-black text-white tracking-tight">{profile.name}</h3>
-                <p className="text-rose-500 font-bold uppercase tracking-[0.2em] text-[10px]">{profile.role}</p>
+                {isEditing ? (
+                  <input 
+                    value={editData.name}
+                    onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                    className="bg-[#0f172a] border border-slate-700 text-3xl font-black text-white tracking-tight rounded-xl px-4 py-1 outline-none focus:border-rose-500"
+                  />
+                ) : (
+                  <h3 className="text-3xl font-black text-white tracking-tight">{profile.name}</h3>
+                )}
+                <p className="text-rose-500 font-bold uppercase tracking-[0.2em] text-[10px] mt-1">{profile.role}</p>
               </div>
             </div>
-            <button 
-              onClick={() => setIsEditing(!isEditing)}
-              className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 shadow-xl"
-            >
-              {isEditing ? "Save Profile" : "Edit Profile"}
-            </button>
+            <div className="flex gap-3">
+              {isEditing ? (
+                <>
+                  <button 
+                    onClick={handleSave}
+                    className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 shadow-xl flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" /> Save
+                  </button>
+                  <button 
+                    onClick={() => { setIsEditing(false); setEditData(profile); }}
+                    className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 shadow-xl"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={() => setIsEditing(true)}
+                  className="bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 shadow-xl flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" /> Edit Profile
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
             <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Email Address</label>
-                <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300">
-                  {profile.email}
-                </div>
+                {isEditing ? (
+                  <input 
+                    value={editData.email}
+                    onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                    className="w-full bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300 outline-none focus:border-rose-500"
+                  />
+                ) : (
+                  <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300">
+                    {profile.email}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Phone Number</label>
-                <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300">
-                  {profile.phone}
-                </div>
+                {isEditing ? (
+                  <input 
+                    value={editData.phone}
+                    onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                    className="w-full bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300 outline-none focus:border-rose-500"
+                  />
+                ) : (
+                  <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm font-bold text-slate-300">
+                    {profile.phone}
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Joined OmniInbox</label>
@@ -1006,9 +1160,18 @@ function ProfileView() {
             <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">About Me</label>
-                <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm leading-relaxed text-slate-400 font-medium min-h-[160px]">
-                  {profile.bio}
-                </div>
+                {isEditing ? (
+                  <textarea 
+                    value={editData.bio}
+                    onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
+                    rows={6}
+                    className="w-full bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm leading-relaxed text-slate-400 font-medium outline-none focus:border-rose-500 resize-none"
+                  />
+                ) : (
+                  <div className="bg-[#0f172a] p-4 rounded-xl border border-slate-800 text-sm leading-relaxed text-slate-400 font-medium min-h-[160px]">
+                    {profile.bio}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1016,28 +1179,28 @@ function ProfileView() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl">
-          <div className="w-10 h-10 bg-blue-500/10 text-blue-400 rounded-xl flex items-center justify-center mb-4">
+        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl group hover:border-blue-500/30 transition-all">
+          <div className="w-10 h-10 bg-blue-500/10 text-blue-400 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <Shield className="w-5 h-5" />
           </div>
           <h5 className="font-bold text-white mb-1">Account Security</h5>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4">2FA ENABLED</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4 font-black">2FA ENABLED</p>
           <button className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">Manage Security</button>
         </div>
-        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl">
-          <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center mb-4">
+        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl group hover:border-emerald-500/30 transition-all">
+          <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <Key className="w-5 h-5" />
           </div>
           <h5 className="font-bold text-white mb-1">API Access</h5>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4">PERSONAL TOKENS: 2</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4 font-black">PERSONAL TOKENS: 2</p>
           <button className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">View Tokens</button>
         </div>
-        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl">
-          <div className="w-10 h-10 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center mb-4">
+        <div className="bg-[#1e293b] p-8 rounded-[2rem] border border-slate-800 shadow-xl group hover:border-amber-500/30 transition-all">
+          <div className="w-10 h-10 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
             <Bell className="w-5 h-5" />
           </div>
           <h5 className="font-bold text-white mb-1">Preferences</h5>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4">EMAIL NOTIFICATIONS</p>
+          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4 font-black">EMAIL NOTIFICATIONS</p>
           <button className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">Change Rules</button>
         </div>
       </div>
@@ -3772,12 +3935,13 @@ function XView({ setPlatforms, setChats, onSuccess }: { setPlatforms: any, setCh
   );
 }
 
-function ChatsView({ setOrders, setLeads, employees, chats, setChats }: { 
+function ChatsView({ setOrders, setLeads, employees, chats, setChats, facebookAccessToken }: { 
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>, 
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>,
   employees: Employee[],
   chats: Chat[],
-  setChats: React.Dispatch<React.SetStateAction<Chat[]>>
+  setChats: React.Dispatch<React.SetStateAction<Chat[]>>,
+  facebookAccessToken: string
 }) {
   const [selectedChat, setSelectedChat] = useState<number | null>(chats.length > 0 ? chats[0].id : null);
   const [messageText, setMessageText] = useState("");
@@ -5213,15 +5377,15 @@ function ChatsView({ setOrders, setLeads, employees, chats, setChats }: {
   );
 }
 
-function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
+function EditEmployeeView({ employee, roles: availableRoles, onSave, onCancel, onDelete }: { employee: Employee, roles: Role[], onSave: (e: Employee) => void, onCancel: () => void, onDelete: () => void }) {
   const [name, setName] = useState(employee.name);
   const [email, setEmail] = useState(employee.email);
-  const [roles, setRoles] = useState(employee.roles);
+  const [assignedRoles, setAssignedRoles] = useState(employee.roles);
   const [status, setStatus] = useState(employee.status);
 
-  const toggleRole = (role: string) => {
-    setRoles((prev: string[]) => 
-      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+  const toggleRole = (slug: string) => {
+    setAssignedRoles((prev: string[]) => 
+      prev.includes(slug) ? prev.filter(r => r !== slug) : [...prev, slug]
     );
   };
 
@@ -5233,7 +5397,7 @@ function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
       className="space-y-8 pb-20"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-white tracking-tight">Edit employee</h2>
+        <h2 className="text-3xl font-bold text-white tracking-tight">{employee.id ? 'Edit employee' : 'Add new employee'}</h2>
       </div>
 
       <button
@@ -5247,11 +5411,13 @@ function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
         <div className="p-10 space-y-8">
           <div className="flex items-center gap-6">
             <div className="w-20 h-20 bg-rose-700 rounded-3xl flex items-center justify-center text-3xl text-white font-black shadow-2xl">
-              {employee.avatar}
+              {employee.avatar || name.charAt(0) || '?'}
             </div>
             <div>
-              <h4 className="text-xl font-bold text-white">{name}</h4>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">ID {employee.id} • Member since {employee.joinedDate}</p>
+              <h4 className="text-xl font-bold text-white">{name || 'New Employee'}</h4>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
+                {employee.id ? `ID ${employee.id} • Member since ${employee.joinedDate}` : 'Preparing new profile'}
+              </p>
             </div>
           </div>
 
@@ -5281,7 +5447,7 @@ function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
                   {['Active', 'Inactive'].map((s) => (
                     <button
                       key={s}
-                      onClick={() => setStatus(s.toLowerCase())}
+                      onClick={() => setStatus(s.toLowerCase() as 'active' | 'inactive')}
                       className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all border-2 ${status === s.toLowerCase() ? 'bg-rose-600/10 border-rose-600 text-rose-500 shadow-lg shadow-rose-900/20' : 'bg-[#0f172a] border-slate-800 text-slate-500 hover:border-slate-700'}`}
                     >
                       {s}
@@ -5293,34 +5459,45 @@ function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
 
             <div className="space-y-6">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Roles & Permissions</label>
-              <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-6 space-y-4">
-                {["Administrator", "Agent", "Manager"].map((role) => (
+              <div className="bg-[#0f172a] border border-slate-800 rounded-3xl p-6 space-y-4 max-h-[300px] overflow-y-auto no-scrollbar">
+                {availableRoles.map((role) => (
                   <div 
-                    key={role}
-                    onClick={() => toggleRole(role)}
-                    className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border ${roles.includes(role) ? 'bg-rose-600/5 border-rose-500/30' : 'bg-transparent border-slate-800 hover:border-slate-700'}`}
+                    key={role.slug}
+                    onClick={() => toggleRole(role.slug)}
+                    className={`flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border ${assignedRoles.includes(role.slug) ? 'bg-rose-600/5 border-rose-500/30' : 'bg-transparent border-slate-800 hover:border-slate-700'}`}
                   >
                     <div className="flex items-center gap-4">
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${roles.includes(role) ? 'bg-rose-500 border-rose-500 shadow-lg shadow-rose-900/40' : 'border-slate-700'}`}>
-                        {roles.includes(role) && <Check className="w-3 h-3 text-white" />}
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${assignedRoles.includes(role.slug) ? 'bg-rose-500 border-rose-500 shadow-lg shadow-rose-900/40' : 'border-slate-700'}`}>
+                        {assignedRoles.includes(role.slug) && <Check className="w-3 h-3 text-white" />}
                       </div>
-                      <span className={`text-sm font-bold ${roles.includes(role) ? 'text-white' : 'text-slate-500'}`}>{role}</span>
+                      <div>
+                        <p className={`text-sm font-bold ${assignedRoles.includes(role.slug) ? 'text-white' : 'text-slate-500'}`}>{role.name}</p>
+                        <p className="text-[10px] text-slate-500 font-bold">{role.isSystem ? 'System Assigned' : 'Custom Role'}</p>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
               <p className="text-[10px] text-slate-500 font-bold leading-relaxed px-4 italic">
-                Roles define granular access to inbox, connections and settings pages. Admin role includes full access.
+                Roles define granular access to inbox, connections and settings pages. Administrator role includes full system access.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-4 pt-10 border-t border-slate-800/50">
             <button 
-              onClick={() => onSave({ ...employee, name, email, roles, status })}
+              onClick={() => onSave({ 
+                ...employee, 
+                name, 
+                email, 
+                roles: assignedRoles, 
+                status,
+                avatar: employee.avatar || name.charAt(0).toUpperCase(),
+                joinedDate: employee.joinedDate || new Date().toLocaleDateString('en-GB')
+              })}
               className="bg-rose-600 hover:bg-rose-700 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-rose-900/20 transition-all active:scale-95 flex items-center gap-3"
             >
-              <Check className="w-4 h-4" /> Save changes
+              <Check className="w-4 h-4" /> {employee.id ? 'Save changes' : 'Add employee'}
             </button>
             <button 
               onClick={onCancel}
@@ -5332,33 +5509,41 @@ function EditEmployeeView({ employee, onSave, onCancel, onDelete }: any) {
         </div>
       </div>
 
-      <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-10 space-y-8">
-        <div className="space-y-1">
-          <h4 className="text-xl font-bold text-white">Remove employee</h4>
-          <p className="text-sm text-slate-400 font-medium leading-relaxed">This will permanently delete the employee account and revoke all access.</p>
+      {employee.id && (
+        <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-10 space-y-8">
+          <div className="space-y-1">
+            <h4 className="text-xl font-bold text-white">Remove employee</h4>
+            <p className="text-sm text-slate-400 font-medium leading-relaxed">This will permanently delete the employee account and revoke all access.</p>
+          </div>
+          <button 
+            onClick={onDelete}
+            className="border-2 border-rose-500/30 hover:bg-rose-600 hover:border-rose-600 text-rose-500 hover:text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center gap-3"
+          >
+            <Trash2 className="w-4 h-4" /> Delete employee
+          </button>
         </div>
-        <button 
-          onClick={onDelete}
-          className="border-2 border-rose-500/30 hover:bg-rose-600 hover:border-rose-600 text-rose-500 hover:text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center gap-3"
-        >
-          <Trash2 className="w-4 h-4" /> Delete employee
-        </button>
-      </div>
+      )}
     </motion.div>
   );
 }
 
-function EmployeesView({ employees, setEmployees }: { employees: Employee[], setEmployees: React.Dispatch<React.SetStateAction<Employee[]>> }) {
+function EmployeesView({ employees, setEmployees, roles }: { employees: Employee[], setEmployees: React.Dispatch<React.SetStateAction<Employee[]>>, roles: Role[] }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingEmployee, setEditingEmployee] = useState<any>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   const filteredEmployees = employees.filter(emp => 
     emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     emp.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleUpdate = (updatedEmp: any) => {
-    setEmployees(prev => prev.map(e => e.id === updatedEmp.id ? updatedEmp : e));
+  const handleUpdate = (updatedEmp: Employee) => {
+    setEmployees(prev => {
+      const exists = prev.find(e => e.id === updatedEmp.id);
+      if (exists) {
+        return prev.map(e => e.id === updatedEmp.id ? updatedEmp : e);
+      }
+      return [...prev, { ...updatedEmp, id: prev.length + 1 }];
+    });
     setEditingEmployee(null);
   };
 
@@ -5373,6 +5558,7 @@ function EmployeesView({ employees, setEmployees }: { employees: Employee[], set
     return (
       <EditEmployeeView 
         employee={editingEmployee}
+        roles={roles}
         onSave={handleUpdate}
         onCancel={() => setEditingEmployee(null)}
         onDelete={() => handleDelete(editingEmployee.id)}
@@ -5389,145 +5575,119 @@ function EmployeesView({ employees, setEmployees }: { employees: Employee[], set
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h3 className="text-2xl font-bold text-white">Employees</h3>
+          <h3 className="text-2xl font-bold text-white tracking-tight">Employees</h3>
         </div>
         <div className="flex gap-4">
-          <button className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95">
-            <X className="w-4 h-4 rotate-45" /> New employee
-          </button>
-          <button className="bg-white hover:bg-slate-100 text-black px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border border-slate-200 transition-all active:scale-95">
-            Manage roles <ChevronDown className="w-4 h-4" />
+          <button 
+            onClick={() => setEditingEmployee({ id: 0, name: '', email: '', roles: [], status: 'active', avatar: '', joinedDate: '', verified: true })}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-rose-900/20"
+          >
+            <PlusCircle className="w-5 h-5" /> New employee
           </button>
         </div>
       </div>
 
       {/* Summary Chips */}
       <div className="flex flex-wrap gap-4">
-        <div className="bg-[#1e293b] border border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Total</span>
+        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700 transition-colors hover:bg-slate-800 cursor-default">
+          <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Total</span>
           <span className="text-sm font-black text-white">{employees.length}</span>
         </div>
-        <div className="bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-xl flex items-center gap-3">
-          <span className="text-xs font-bold text-emerald-500 uppercase tracking-widest">Active</span>
-          <span className="text-sm font-black text-emerald-500">2</span>
+        <div className="bg-emerald-500/10 border border-emerald-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-emerald-500/30 transition-colors hover:bg-emerald-500/20 cursor-default">
+          <span className="text-[11px] font-black text-emerald-500 uppercase tracking-[0.2em]">Active</span>
+          <span className="text-sm font-black text-emerald-500">{employees.filter(e => e.status === 'active').length}</span>
         </div>
-        <div className="bg-[#1e293b] border border-slate-800 px-4 py-2 rounded-xl flex items-center gap-3">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Inactive</span>
-          <span className="text-sm font-black text-white">0</span>
-        </div>
-        <div className="bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl flex items-center gap-3">
-          <span className="text-xs font-bold text-sky-500 uppercase tracking-widest">Verified email</span>
-          <span className="text-sm font-black text-sky-500">2</span>
+        <div className="bg-sky-500/10 border border-sky-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-sky-500/30 transition-colors hover:bg-sky-500/20 cursor-default">
+          <span className="text-[11px] font-black text-sky-500 uppercase tracking-[0.2em]">Verified</span>
+          <span className="text-sm font-black text-sky-500">{employees.filter(e => e.verified).length}</span>
         </div>
       </div>
 
       <div className="space-y-6">
         <p className="text-sm text-slate-400 max-w-4xl leading-relaxed">
-          Assign roles to each team member. Access comes from each role's permissions (or from full admin panel access on a role). At least one user must keep a role with admin panel access.
+          Assign roles to each team member. Access comes from each role's permissions. At least one user must keep a role with admin panel access to ensure system management capabilities.
         </p>
-        <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-          This workspace has 2 defined roles. Edit role permissions under Manage roles. Use Edit for account details, contact info, and notes.
-        </p>
-
-        {/* Quick Reference */}
-        <div className="bg-[#1e293b]/50 border border-slate-800 p-8 rounded-[2rem] space-y-4 shadow-xl">
-          <h5 className="font-bold text-white text-sm uppercase tracking-widest mb-4">Quick reference</h5>
-          <ul className="space-y-4">
-            {[
-              "Save on each row updates roles only (not for your own row if you have admin panel access—your roles are locked). Use Edit for profile and account details.",
-              "Inactive accounts cannot sign in. You cannot deactivate your own account from Edit.",
-              "Deleting an employee removes their account; you cannot delete yourself or the last administrator.",
-              "\"Panel\" means the role grants full admin panel access (all areas unless you use granular permissions on other roles).",
-              "New accounts you add from \"New employee\" receive a verification email and can sign in after confirming it."
-            ].map((text, i) => (
-              <li key={i} className="flex gap-4 items-start text-xs text-slate-400 leading-relaxed">
-                <span className="w-1.5 h-1.5 bg-slate-600 rounded-full mt-1.5 shrink-0"></span>
-                {text}
-              </li>
-            ))}
-          </ul>
-        </div>
 
         {/* Search Employees */}
         <div className="bg-[#1e293b]/30 p-8 rounded-[2rem] border border-slate-800/50 space-y-4">
-          <h5 className="font-bold text-xs text-slate-500 uppercase tracking-[0.2em]">Search Employees</h5>
-          <div className="relative">
+          <label className="font-bold text-xs text-slate-500 uppercase tracking-[0.2em] ml-1">Search Directory</label>
+          <div className="relative group">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-rose-500 transition-colors" />
             <input 
               type="text" 
-              placeholder="Name, email, phone, job title, department"
+              placeholder="Find by name or email address..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-white focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
+              className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl pl-14 pr-6 py-4 text-sm text-white focus:border-rose-600 outline-none transition-all placeholder:text-slate-700 font-bold"
             />
           </div>
         </div>
 
         {/* Employees Table */}
-        <div className="bg-[#1e293b]/30 rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-[#0f172a]/50 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] border-b border-slate-800">
-                <th className="px-8 py-6">Name</th>
-                <th className="px-8 py-6">Email & Verification</th>
-                <th className="px-8 py-6">Roles</th>
-                <th className="px-8 py-6">Status</th>
-                <th className="px-8 py-6 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {filteredEmployees.map((emp) => (
-                <tr key={emp.id} className="group hover:bg-white/5 transition-colors">
-                  <td className="px-8 py-6">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-rose-700 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-lg">
-                        {emp.avatar}
-                      </div>
-                      <div>
-                        <h6 className="font-bold text-slate-100">{emp.name}</h6>
-                        <p className="text-[10px] text-slate-500 font-bold tracking-tight">ID {emp.id} <span className="mx-1 opacity-50">•</span> Member since {emp.joinedDate}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <h6 className="text-sm font-bold text-slate-200">{emp.email}</h6>
-                    <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest mt-1 flex items-center gap-1">
-                      {emp.verified && <CheckCircle2 className="w-3 h-3" />}
-                      Email verified
-                    </p>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="space-y-2">
-                      {["Administrator", "Agent"].map((role) => (
-                        <label key={role} className="flex items-center gap-3 cursor-pointer group/item">
-                          <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${emp.roles.includes(role) ? 'bg-emerald-500 border-emerald-500' : 'border-slate-700 bg-transparent'}`}>
-                            {emp.roles.includes(role) && <CheckCircle2 className="w-3 h-3 text-white" />}
-                          </div>
-                          <span className={`text-xs font-bold ${emp.roles.includes(role) ? 'text-slate-200' : 'text-slate-500'}`}>{role}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-8 py-6">
-                    <span className="text-sm font-bold text-emerald-400 capitalize">{emp.status}</span>
-                  </td>
-                  <td className="px-8 py-6">
-                    <div className="flex items-center justify-end gap-2">
-                      <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs rounded-lg transition-all border border-slate-700/50">Profile</button>
-                      <button 
-                        onClick={() => setEditingEmployee(emp)}
-                        className="px-4 py-2 bg-white/5 hover:bg-white text-slate-300 hover:text-black font-bold text-xs rounded-lg transition-all border border-slate-700/50"
-                      >
-                        Edit
-                      </button>
-                      {emp.id === 2 && (
-                        <button className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg transition-all shadow-lg active:scale-95">Save</button>
-                      )}
-                    </div>
-                  </td>
+        <div className="bg-[#1e293b]/30 rounded-[2rem] border border-slate-800/50 overflow-hidden shadow-2xl backdrop-blur-md">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-[#0f172a]/70 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] border-b border-slate-800/80">
+                  <th className="px-10 py-8">Employee</th>
+                  <th className="px-10 py-8">Assigned Roles</th>
+                  <th className="px-10 py-8">Account Status</th>
+                  <th className="px-10 py-8 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                {filteredEmployees.map((emp) => (
+                  <tr key={emp.id} className="group hover:bg-white/[0.03] transition-all">
+                    <td className="px-10 py-8">
+                      <div className="flex items-center gap-5">
+                        <div className="w-12 h-12 bg-rose-700 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-xl">
+                          {emp.avatar}
+                        </div>
+                        <div className="space-y-1">
+                          <h6 className="font-black text-slate-100 text-sm tracking-tight">{emp.name}</h6>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-bold">{emp.email}</span>
+                            {emp.verified && <CheckCircle2 className="w-3 h-3 text-emerald-500" />}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex flex-wrap gap-2">
+                        {emp.roles.map(rSlug => {
+                          const roleObj = roles.find(r => r.slug === rSlug);
+                          return (
+                            <span key={rSlug} className="px-2.5 py-1 bg-slate-800 text-[10px] font-black text-slate-400 rounded-lg uppercase tracking-widest border border-slate-700/50">
+                              {roleObj?.name || rSlug}
+                            </span>
+                          );
+                        })}
+                        {emp.roles.length === 0 && <span className="text-[10px] text-slate-600 font-bold uppercase italic">No roles assigned</span>}
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${emp.status === 'active' ? 'bg-emerald-500 text-emerald-500' : 'bg-slate-700 text-slate-700'}`}></div>
+                        <span className={`text-[10px] font-black uppercase tracking-widest ${emp.status === 'active' ? 'text-slate-200' : 'text-slate-500'}`}>
+                          {emp.status}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => setEditingEmployee(emp)}
+                          className="px-6 py-2 bg-[#0f172a] hover:bg-white text-slate-400 hover:text-black font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-slate-800 hover:border-white active:scale-95"
+                        >
+                          Configure
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -6129,7 +6289,7 @@ function PackagesView() {
   );
 }
 
-function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
+function EditPermissionView({ permission, onSave, onCancel, onDelete }: { permission: Permission, onSave: (p: Permission) => void, onCancel: () => void, onDelete: () => void }) {
   const [name, setName] = useState(permission.name);
   const [description, setDescription] = useState(permission.description);
 
@@ -6141,7 +6301,7 @@ function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
       className="space-y-8 pb-20"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-white tracking-tight">Edit permission</h2>
+        <h2 className="text-3xl font-bold text-white tracking-tight">{permission.slug ? 'Edit permission' : 'New permission'}</h2>
       </div>
 
       <button
@@ -6153,10 +6313,6 @@ function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
 
       <div className="bg-[#1e293b] rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl">
         <div className="p-10 space-y-8">
-          <p className="text-sm text-slate-400 font-medium leading-relaxed max-w-2xl">
-            Update permission details used by your role matrix. Changes apply wherever this permission is granted through roles.
-          </p>
-
           <div className="space-y-8">
             <div className="space-y-3">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Name</label>
@@ -6164,23 +6320,8 @@ function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold placeholder:text-slate-700" 
+                placeholder="e.g. Export Reports"
               />
-            </div>
-
-            {permission.isSystem && (
-              <div className="bg-amber-500/5 border border-amber-500/20 p-8 rounded-3xl space-y-2">
-                <p className="text-sm font-black text-amber-500 uppercase tracking-widest">System permission</p>
-                <p className="text-xs text-amber-500/60 font-bold leading-relaxed">
-                  The slug is fixed so routes and policies stay stable. You can change the display name and description.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Slug</label>
-              <div className="bg-[#0f172a]/50 border border-slate-800/50 rounded-2xl px-6 py-4">
-                <code className="text-sm font-mono text-slate-500 font-bold">{permission.slug}</code>
-              </div>
             </div>
 
             <div className="space-y-3">
@@ -6190,17 +6331,24 @@ function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
                 className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold resize-none leading-relaxed"
-                placeholder="Describe what this permission allows..."
+                placeholder="Briefly describe what this permission enables users to do..."
               />
             </div>
+
+            {!permission.slug && (
+              <div className="bg-blue-500/5 border border-blue-500/20 p-6 rounded-2xl">
+                <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 italic">Generated ID</p>
+                <code className="text-xs text-blue-400/60 font-mono">{(name.toLowerCase().replace(/\s+/g, '_') || 'permission_slug')}</code>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4 pt-8 border-t border-slate-800/50">
             <button 
-              onClick={() => onSave({ ...permission, name, description })}
+              onClick={() => onSave({ ...permission, name, description, slug: permission.slug || name.toLowerCase().replace(/\s+/g, '_') })}
               className="bg-rose-600 hover:bg-rose-700 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-rose-900/20 transition-all active:scale-95 flex items-center gap-3"
             >
-              <Check className="w-4 h-4" /> Save changes
+              <Check className="w-4 h-4" /> {permission.slug ? 'Save changes' : 'Create permission'}
             </button>
             <button 
               onClick={onCancel}
@@ -6212,41 +6360,35 @@ function EditPermissionView({ permission, onSave, onCancel, onDelete }: any) {
         </div>
       </div>
 
-      <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-10 space-y-8">
-        <div className="space-y-1">
-          <h4 className="text-xl font-bold text-white">Remove permission</h4>
-          <p className="text-sm text-slate-400 font-medium leading-relaxed">Permanently remove this permission definition. This cannot be undone.</p>
+      {permission.slug && !permission.isSystem && (
+        <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-10 space-y-8">
+          <div className="space-y-1">
+            <h4 className="text-xl font-bold text-white">Remove permission</h4>
+            <p className="text-sm text-slate-400 font-medium leading-relaxed">Permanently remove this permission definition. This cannot be undone.</p>
+          </div>
+          <button 
+            onClick={onDelete}
+            className="border-2 border-rose-500/30 hover:bg-rose-600 hover:border-rose-600 text-rose-500 hover:text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center gap-3"
+          >
+            <Trash2 className="w-4 h-4" /> Delete permission
+          </button>
         </div>
-        <button 
-          onClick={onDelete}
-          className="border-2 border-rose-500/30 hover:bg-rose-600 hover:border-rose-600 text-rose-500 hover:text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 flex items-center gap-3"
-        >
-          <Trash2 className="w-4 h-4" /> Delete permission
-        </button>
-      </div>
+      )}
     </motion.div>
   );
 }
 
-function PermissionsView() {
-  const [permissions, setPermissions] = useState([
-    { name: "Connections", isSystem: true, description: "Manage WhatsApp and Messenger channel accounts (credentials, labels, active state).", slug: "connections.manage", roles: 1 },
-    { name: "Employees", isSystem: true, description: "Assign roles to team members.", slug: "employees.manage", roles: 1 },
-    { name: "Inbox", isSystem: true, description: "View and reply in the unified chats inbox.", slug: "inbox.access", roles: 1 },
-    { name: "Integration settings", isSystem: true, description: "View webhook URLs and integration shortcuts on Settings.", slug: "settings.integrations", roles: 1 },
-    { name: "LinkedIn", isSystem: true, description: "Connect and configure LinkedIn professional profiles.", slug: "linkedin.manage", roles: 1 },
-    { name: "Messenger", isSystem: true, description: "Connect and configure Facebook Messenger.", slug: "messenger.manage", roles: 1 },
-    { name: "Permissions", isSystem: true, description: "Create and edit permission definitions.", slug: "permissions.manage", roles: 1 },
-    { name: "Roles", isSystem: true, description: "Create and edit roles and their permissions.", slug: "roles.manage", roles: 1 },
-    { name: "TikTok", isSystem: true, description: "Connect and configure TikTok content accounts.", slug: "tiktok.manage", roles: 1 },
-    { name: "WhatsApp", isSystem: true, description: "Connect and configure WhatsApp Cloud API.", slug: "whatsapp.manage", roles: 1 },
-    { name: "X (Twitter)", isSystem: true, description: "Connect and configure X (formerly Twitter) accounts.", slug: "x.manage", roles: 1 },
-  ]);
+function PermissionsView({ permissions, setPermissions }: { permissions: Permission[], setPermissions: React.Dispatch<React.SetStateAction<Permission[]>> }) {
+  const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
 
-  const [editingPermission, setEditingPermission] = useState<any>(null);
-
-  const handleUpdate = (updatedPerm: any) => {
-    setPermissions(prev => prev.map(p => p.slug === updatedPerm.slug ? updatedPerm : p));
+  const handleUpdate = (updatedPerm: Permission) => {
+    setPermissions(prev => {
+      const exists = prev.find(p => p.slug === updatedPerm.slug);
+      if (exists) {
+        return prev.map(p => p.slug === updatedPerm.slug ? updatedPerm : p);
+      }
+      return [...prev, updatedPerm];
+    });
     setEditingPermission(null);
   };
 
@@ -6277,15 +6419,16 @@ function PermissionsView() {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-4 max-w-2xl">
-          <h3 className="text-4xl font-bold text-white tracking-tight">Permissions</h3>
+          <h3 className="text-2xl font-bold text-white tracking-tight">Permissions</h3>
           <p className="text-sm text-slate-400 leading-relaxed font-medium">
-            Permissions are the building blocks for access. Assign them to roles, then assign roles to users on the <span className="text-rose-500 cursor-pointer hover:underline font-bold">Employees</span> page.
-            <br />
-            Any permission can be deleted only when it is not attached to any role.
+            Define granular permissions to control access across your workspace. Custom permissions can be linked to any role.
           </p>
         </div>
         <div className="flex gap-4">
-          <button className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-4 rounded-[1.25rem] font-black text-[11px] uppercase tracking-[0.2em] flex items-center gap-3 transition-all active:scale-95 shadow-xl shadow-rose-900/20">
+          <button 
+            onClick={() => setEditingPermission({ name: '', slug: '', description: '', isSystem: false })}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-rose-900/20"
+          >
             <PlusCircle className="w-5 h-5" /> New permission
           </button>
         </div>
@@ -6293,17 +6436,17 @@ function PermissionsView() {
 
       {/* Summary Filter Chips */}
       <div className="flex flex-wrap gap-4">
-        <div className="bg-[#1e293b] border border-slate-800 px-6 py-3 rounded-2xl flex items-center gap-4 shadow-xl">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Total</span>
-          <span className="text-lg font-black text-white">{permissions.length}</span>
+        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700 transition-colors hover:bg-slate-800 cursor-default">
+          <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Total</span>
+          <span className="text-sm font-black text-white">{permissions.length}</span>
         </div>
-        <div className="bg-[#1e293b] border border-slate-800 px-6 py-3 rounded-2xl flex items-center gap-4 shadow-xl">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">System</span>
-          <span className="text-lg font-black text-white">{permissions.filter(p => p.isSystem).length}</span>
+        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700 transition-colors hover:bg-slate-800 cursor-default">
+          <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">System</span>
+          <span className="text-sm font-black text-white">{permissions.filter(p => p.isSystem).length}</span>
         </div>
-        <div className="bg-sky-500/10 border border-sky-500/20 px-6 py-3 rounded-2xl flex items-center gap-4 shadow-xl">
-          <span className="text-[10px] font-black text-sky-500 uppercase tracking-[0.2em]">Custom</span>
-          <span className="text-lg font-black text-sky-500">{permissions.filter(p => !p.isSystem).length}</span>
+        <div className="bg-sky-500/10 border border-sky-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-sky-500/30 transition-colors hover:bg-sky-500/20 cursor-default">
+          <span className="text-[11px] font-black text-sky-500 uppercase tracking-[0.2em]">Custom</span>
+          <span className="text-sm font-black text-sky-500">{permissions.filter(p => !p.isSystem).length}</span>
         </div>
       </div>
 
@@ -6315,7 +6458,6 @@ function PermissionsView() {
               <tr className="bg-[#0f172a]/70 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] border-b border-slate-800/80">
                 <th className="px-10 py-8">Permission Details</th>
                 <th className="px-10 py-8">Slug Identifier</th>
-                <th className="px-10 py-8">Usage</th>
                 <th className="px-10 py-8 text-right">Actions</th>
               </tr>
             </thead>
@@ -6325,12 +6467,12 @@ function PermissionsView() {
                   <td className="px-10 py-8">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <h6 className="font-black text-slate-100 text-base tracking-tight">{perm.name}</h6>
+                        <h6 className="font-black text-slate-100 text-sm tracking-tight">{perm.name}</h6>
                         {perm.isSystem && (
                           <span className="px-2 py-0.5 bg-slate-800 text-[9px] font-black text-slate-500 rounded uppercase tracking-widest border border-slate-700/50">System</span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500 font-bold max-w-md leading-relaxed">{perm.description}</p>
+                      <p className="text-[11px] text-slate-500 font-bold max-w-md leading-relaxed">{perm.description}</p>
                     </div>
                   </td>
                   <td className="px-10 py-8">
@@ -6339,24 +6481,12 @@ function PermissionsView() {
                     </code>
                   </td>
                   <td className="px-10 py-8">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5 text-rose-500" />
-                      <span className="text-sm font-black text-slate-300">{perm.roles} roles</span>
-                    </div>
-                  </td>
-                  <td className="px-10 py-8">
-                    <div className="flex items-center justify-end gap-3">
+                    <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={() => setEditingPermission(perm)}
-                        className="px-6 py-2.5 bg-[#0f172a] hover:bg-white text-slate-400 hover:text-black font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-slate-800 hover:border-white shadow-lg flex items-center gap-2 active:scale-95"
+                        className="px-6 py-2 bg-[#0f172a] hover:bg-white text-slate-400 hover:text-black font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-slate-800 hover:border-white shadow-lg active:scale-95"
                       >
-                        <Shield className="w-3.5 h-3.5" /> Edit
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(perm.slug)}
-                        className="p-2.5 bg-transparent hover:bg-rose-500/10 text-rose-500/50 hover:text-rose-500 rounded-xl transition-all border border-transparent hover:border-rose-500/30"
-                      >
-                        <Trash2 className="w-4 h-4" />
+                        Configure
                       </button>
                     </div>
                   </td>
@@ -6370,10 +6500,17 @@ function PermissionsView() {
   );
 }
 
-function EditRoleView({ role, onSave, onCancel, onDelete }: any) {
+function EditRoleView({ role, permissions, onSave, onCancel, onDelete }: { role: Role, permissions: Permission[], onSave: (r: Role) => void, onCancel: () => void, onDelete: () => void }) {
   const [name, setName] = useState(role.name);
   const [description, setDescription] = useState(role.description);
   const [panelAccess, setPanelAccess] = useState(role.panelAccess);
+  const [assignedPermissions, setAssignedPermissions] = useState<string[]>(role.permissions);
+
+  const togglePermission = (slug: string) => {
+    setAssignedPermissions(prev => 
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    );
+  };
 
   return (
     <motion.div
@@ -6383,7 +6520,7 @@ function EditRoleView({ role, onSave, onCancel, onDelete }: any) {
       className="space-y-8 pb-20"
     >
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-white tracking-tight">Edit role</h2>
+        <h2 className="text-3xl font-bold text-white tracking-tight">{role.slug ? 'Edit role' : 'Create new role'}</h2>
       </div>
 
       <button
@@ -6394,79 +6531,78 @@ function EditRoleView({ role, onSave, onCancel, onDelete }: any) {
       </button>
 
       <div className="bg-[#1e293b] rounded-[2.5rem] border border-slate-800 overflow-hidden shadow-2xl">
-        <div className="p-10 space-y-8">
-          <p className="text-sm text-slate-400 font-medium leading-relaxed max-w-2xl">
-            Update role definition and access level. Roles represent sets of permissions granted to employees.
-          </p>
+        <div className="p-10 space-y-10">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Role Name</label>
+                <input 
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold placeholder:text-slate-700" 
+                  placeholder="e.g. Senior Support Agent"
+                />
+              </div>
 
-          <div className="space-y-8">
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Role Name</label>
-              <input 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold placeholder:text-slate-700" 
-              />
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Panel Access</label>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { label: 'Yes', val: true, desc: 'Full panel access' },
+                    { label: 'No', val: false, desc: 'Restricted access' }
+                  ].map((opt) => (
+                    <button
+                      key={opt.label}
+                      onClick={() => setPanelAccess(opt.val)}
+                      className={`p-6 rounded-2xl border-2 transition-all text-left space-y-1 ${panelAccess === opt.val ? 'bg-rose-600/10 border-rose-600 shadow-lg shadow-rose-900/10' : 'bg-[#0f172a] border-slate-800 hover:border-slate-700'}`}
+                    >
+                      <p className={`font-black text-sm tracking-tight ${panelAccess === opt.val ? 'text-rose-500' : 'text-slate-300'}`}>{opt.label}</p>
+                      <p className="text-[10px] font-bold text-slate-500 leading-none">{opt.desc}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Role Description</label>
+                <textarea 
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold resize-none leading-relaxed"
+                  placeholder="Describe the responsibilities of this role..."
+                />
+              </div>
             </div>
 
-            {role.isSystem && (
-              <div className="bg-amber-500/5 border border-amber-500/20 p-8 rounded-3xl space-y-2">
-                <p className="text-sm font-black text-amber-500 uppercase tracking-widest">System role</p>
-                <p className="text-xs text-amber-500/60 font-bold leading-relaxed">
-                  The slug is protected to ensure system stability. You can still modify the display name, description, and panel access.
-                </p>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Slug Identifier</label>
-              <div className="bg-[#0f172a]/50 border border-slate-800/50 rounded-2xl px-6 py-4">
-                <code className="text-sm font-mono text-slate-500 font-bold">{role.slug}</code>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Panel Access</label>
-              <div className="flex gap-4">
-                {[
-                  { label: 'Full Access', val: true, desc: 'Grants full admin visibility' },
-                  { label: 'Limited', val: false, desc: 'Inbox & basic tools only' }
-                ].map((opt) => (
-                  <button
-                    key={opt.label}
-                    onClick={() => setPanelAccess(opt.val)}
-                    className={`flex-1 p-6 rounded-3xl text-left transition-all border-2 ${panelAccess === opt.val ? 'bg-rose-600/10 border-rose-600 shadow-xl shadow-rose-900/20' : 'bg-[#0f172a] border-slate-800 hover:border-slate-700'}`}
+            <div className="space-y-6">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Permissions Matrix</label>
+              <div className="bg-[#0f172a] rounded-3xl border border-slate-800 p-6 space-y-4 max-h-[500px] overflow-y-auto no-scrollbar">
+                {permissions.map((perm) => (
+                  <div 
+                    key={perm.slug}
+                    onClick={() => togglePermission(perm.slug)}
+                    className={`flex items-start gap-4 p-4 rounded-2xl cursor-pointer border transition-all ${assignedPermissions.includes(perm.slug) ? 'bg-emerald-500/10 border-emerald-500/30' : 'hover:bg-white/5 border-transparent'}`}
                   >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${panelAccess === opt.val ? 'border-rose-500 bg-rose-500' : 'border-slate-700'}`}>
-                        {panelAccess === opt.val && <Check className="w-2.5 h-2.5 text-white" />}
-                      </div>
-                      <span className={`text-sm font-black uppercase tracking-widest ${panelAccess === opt.val ? 'text-white' : 'text-slate-400'}`}>{opt.label}</span>
+                    <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-all ${assignedPermissions.includes(perm.slug) ? 'bg-emerald-500 border-emerald-500 shadow-lg shadow-emerald-900/20' : 'border-slate-700'}`}>
+                      {assignedPermissions.includes(perm.slug) && <Check className="w-3.5 h-3.5 text-white" />}
                     </div>
-                    <p className="text-[10px] font-bold text-slate-500 leading-none">{opt.desc}</p>
-                  </button>
+                    <div>
+                      <p className={`text-sm font-black tracking-tight ${assignedPermissions.includes(perm.slug) ? 'text-emerald-500' : 'text-slate-300'}`}>{perm.name}</p>
+                      <p className="text-[10px] text-slate-500 font-bold leading-relaxed">{perm.description}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Role Description</label>
-              <textarea 
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full bg-[#0f172a] border border-slate-800 rounded-2xl px-6 py-4 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-bold resize-none leading-relaxed"
-                placeholder="Describe the responsibilities of this role..."
-              />
             </div>
           </div>
 
           <div className="flex items-center gap-4 pt-10 border-t border-slate-800/50">
             <button 
-              onClick={() => onSave({ ...role, name, description, panelAccess })}
+              onClick={() => onSave({ ...role, name, description, panelAccess, permissions: assignedPermissions, slug: role.slug || name.toLowerCase().replace(/\s+/g, '-') })}
               className="bg-rose-600 hover:bg-rose-700 text-white px-10 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-rose-900/20 transition-all active:scale-95 flex items-center gap-3"
             >
-              <Check className="w-4 h-4" /> Save changes
+              <Check className="w-4 h-4" /> {role.slug ? 'Save changes' : 'Create role'}
             </button>
             <button 
               onClick={onCancel}
@@ -6478,7 +6614,7 @@ function EditRoleView({ role, onSave, onCancel, onDelete }: any) {
         </div>
       </div>
 
-      {!role.isSystem && (
+      {role.slug && !role.isSystem && (
         <div className="bg-rose-500/5 border border-rose-500/10 rounded-[2.5rem] p-10 space-y-8">
           <div className="space-y-1">
             <h4 className="text-xl font-bold text-white">Remove role</h4>
@@ -6496,30 +6632,17 @@ function EditRoleView({ role, onSave, onCancel, onDelete }: any) {
   );
 }
 
-function RolesView() {
-  const [roles, setRoles] = useState([
-    { 
-      name: "Administrator", 
-      isSystem: true, 
-      description: "Full access to messaging tools, team settings, and role management.", 
-      slug: "admin", 
-      panelAccess: true, 
-      users: 1 
-    },
-    { 
-      name: "Agent", 
-      isSystem: true, 
-      description: "Standard team member without admin panel access.", 
-      slug: "agent", 
-      panelAccess: false, 
-      users: 1 
-    }
-  ]);
+function RolesView({ roles, setRoles, employees, permissions }: { roles: Role[], setRoles: React.Dispatch<React.SetStateAction<Role[]>>, employees: Employee[], permissions: Permission[] }) {
+  const [editingRole, setEditingRole] = useState<Role | null>(null);
 
-  const [editingRole, setEditingRole] = useState<any>(null);
-
-  const handleUpdate = (updatedRole: any) => {
-    setRoles(prev => prev.map(r => r.slug === updatedRole.slug ? updatedRole : r));
+  const handleUpdate = (updatedRole: Role) => {
+    setRoles(prev => {
+      const exists = prev.find(r => r.slug === updatedRole.slug);
+      if (exists) {
+        return prev.map(r => r.slug === updatedRole.slug ? updatedRole : r);
+      }
+      return [...prev, updatedRole];
+    });
     setEditingRole(null);
   };
 
@@ -6527,7 +6650,8 @@ function RolesView() {
     const roleToRemove = roles.find(r => r.slug === slug);
     if (!roleToRemove) return;
 
-    if (roleToRemove.users > 0) {
+    const userCount = employees.filter(e => e.roles.includes(slug)).length;
+    if (userCount > 0) {
       alert("Cannot delete role because it is still assigned to users. Remove the role from employees first.");
       return;
     }
@@ -6542,6 +6666,7 @@ function RolesView() {
     return (
       <EditRoleView 
         role={editingRole}
+        permissions={permissions}
         onSave={handleUpdate}
         onCancel={() => setEditingRole(null)}
         onDelete={() => handleDelete(editingRole.slug)}
@@ -6558,134 +6683,119 @@ function RolesView() {
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-4 max-w-2xl">
-          <h3 className="text-2xl font-bold text-white tracking-tight">Roles</h3>
+          <h3 className="text-2xl font-bold text-white tracking-tight">Role Management & RBAC</h3>
           <p className="text-sm text-slate-400 leading-relaxed">
-            Define roles, optional full admin panel access, and which permissions each role grants. Assign roles to people on the <span className="text-blue-400 cursor-pointer hover:underline font-bold">Employees</span> page.
-            <br />
-            System roles are protected. Custom roles can be deleted only when no users are still assigned.
+            Configure how access is delegated across your organization. Roles define the structure of permissions and administrative authority.
           </p>
         </div>
         <div className="flex gap-4">
-          <button className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-rose-900/20">
-            <X className="w-5 h-5 rotate-45" /> New role
+          <button 
+            onClick={() => setEditingRole({ name: '', slug: '', description: '', isSystem: false, panelAccess: false, permissions: [] })}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-rose-900/20"
+          >
+            <PlusCircle className="w-5 h-5" /> New role
           </button>
-          <button className="bg-[#1e293b] hover:bg-slate-700 text-slate-200 px-6 py-2 rounded-lg font-bold text-sm flex items-center gap-2 border border-slate-700/50 transition-all active:scale-95">
-            Manage employees <ChevronDown className="w-4 h-4 ml-2" />
-          </button>
+        </div>
+      </div>
+
+      {/* How it works section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-[#1e293b]/50 border border-slate-800 p-6 rounded-3xl space-y-3 shadow-xl">
+          <div className="w-10 h-10 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center font-bold text-sm">1</div>
+          <h5 className="font-bold text-white text-sm uppercase tracking-tight">Define Permissions</h5>
+          <p className="text-[11px] text-slate-500 font-bold leading-relaxed">Create granular permissions on the permissions page to define exactly what actions are possible.</p>
+        </div>
+        <div className="bg-[#1e293b]/50 border border-slate-800 p-6 rounded-3xl space-y-3 shadow-xl">
+          <div className="w-10 h-10 bg-indigo-500/10 text-indigo-500 rounded-xl flex items-center justify-center font-bold text-sm">2</div>
+          <h5 className="font-bold text-white text-sm uppercase tracking-tight">Bundle into Roles</h5>
+          <p className="text-[11px] text-slate-500 font-bold leading-relaxed">Combine multiple permissions into a single Role. This makes managing large teams significantly easier.</p>
+        </div>
+        <div className="bg-[#1e293b]/50 border border-slate-800 p-6 rounded-3xl space-y-3 shadow-xl">
+          <div className="w-10 h-10 bg-emerald-500/10 text-emerald-500 rounded-xl flex items-center justify-center font-bold text-sm">3</div>
+          <h5 className="font-bold text-white text-sm uppercase tracking-tight">Assign to Employees</h5>
+          <p className="text-[11px] text-slate-500 font-bold leading-relaxed">Head over to the directory and link roles to specific accounts to grant instant system access.</p>
         </div>
       </div>
 
       {/* Summary Filter Chips */}
       <div className="flex flex-wrap gap-4">
-        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700">
+        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700 transition-colors hover:bg-slate-800 cursor-default">
           <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">Total</span>
-          <span className="text-sm font-black text-white">2</span>
+          <span className="text-sm font-black text-white">{roles.length}</span>
         </div>
-        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700">
+        <div className="bg-[#1e293b] border border-slate-800 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-slate-700 transition-colors hover:bg-slate-800 cursor-default">
           <span className="text-[11px] font-black text-slate-500 uppercase tracking-[0.2em]">System</span>
-          <span className="text-sm font-black text-white">2</span>
+          <span className="text-sm font-black text-white">{roles.filter(r => r.isSystem).length}</span>
         </div>
-        <div className="bg-sky-500/10 border border-sky-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-sky-500/30">
+        <div className="bg-sky-500/10 border border-sky-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-sky-500/30 transition-colors hover:bg-sky-500/20 cursor-default">
           <span className="text-[11px] font-black text-sky-500 uppercase tracking-[0.2em]">Custom</span>
-          <span className="text-sm font-black text-sky-500">0</span>
+          <span className="text-sm font-black text-sky-500">{roles.filter(r => !r.isSystem).length}</span>
         </div>
-        <div className="bg-emerald-500/10 border border-emerald-500/20 px-5 py-2.5 rounded-xl flex items-center gap-3 shadow-md group border-b-2 border-b-emerald-500/30">
-          <span className="text-[11px] font-black text-emerald-500 uppercase tracking-[0.2em]">Panel access</span>
-          <span className="text-sm font-black text-emerald-500">1</span>
-        </div>
-      </div>
-
-      {/* Quick Reference Card */}
-      <div className="bg-[#1e293b]/40 border border-slate-800/80 p-10 rounded-[2.5rem] space-y-6 shadow-2xl relative overflow-hidden backdrop-blur-sm group">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-blue-500/10 transition-colors"></div>
-        <h5 className="font-bold text-white text-xs uppercase tracking-[0.2em] flex items-center gap-3">
-          <Activity className="w-4 h-4 text-blue-400" /> Quick reference
-        </h5>
-        <ul className="space-y-5">
-          {[
-            "\"Panel access\" means the role grants full admin panel visibility (all areas unless you rely on granular permissions on other roles).",
-            "The Administrator role always carries every permission; editing it syncs permissions automatically.",
-            "Delete is available only for custom roles with zero users assigned. Remove the role from employees first if needed."
-          ].map((text, i) => (
-            <li key={i} className="flex gap-5 items-start text-xs text-slate-400 leading-relaxed font-medium">
-              <span className="w-1.5 h-1.5 bg-[#f05340] rounded-full mt-2 shrink-0 shadow-[0_0_8px_rgba(240,83,64,0.4)]"></span>
-              {text}
-            </li>
-          ))}
-        </ul>
       </div>
 
       {/* Roles Database Table */}
       <div className="bg-[#1e293b]/30 rounded-[2.5rem] border border-slate-800/50 overflow-hidden shadow-2xl backdrop-blur-md">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-[#0f172a]/70 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] border-b border-slate-800/80">
-              <th className="px-10 py-8">Name</th>
-              <th className="px-10 py-8">Slug</th>
-              <th className="px-10 py-8">Panel Access</th>
-              <th className="px-10 py-8">Users</th>
-              <th className="px-10 py-8 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800/50">
-            {roles.map((role) => (
-              <tr key={role.slug} className="group hover:bg-white/[0.03] transition-all">
-                <td className="px-10 py-8">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                      <h6 className="font-black text-slate-100 text-sm tracking-tight">{role.name}</h6>
-                      {role.isSystem && (
-                        <span className="px-2.5 py-0.5 bg-slate-800 text-[9px] font-black text-slate-500 rounded uppercase tracking-widest border border-slate-700/50">System</span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 font-bold max-w-sm leading-relaxed">{role.description}</p>
-                  </div>
-                </td>
-                <td className="px-10 py-8 font-mono text-[11px] text-slate-400 font-bold group-hover:text-blue-400 transition-colors">
-                  {role.slug}
-                </td>
-                <td className="px-10 py-8">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${role.panelAccess ? 'bg-emerald-500 text-emerald-500' : 'bg-slate-700 text-slate-700'}`}></div>
-                    <span className={`text-[11px] font-black uppercase tracking-widest ${role.panelAccess ? 'text-slate-200' : 'text-slate-500'}`}>
-                      {role.panelAccess ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-10 py-8">
-                  <div className="flex items-center gap-3">
-                    <Users className="w-3.5 h-3.5 text-slate-600" />
-                    <span className="text-sm font-black text-slate-300">{role.users}</span>
-                  </div>
-                </td>
-                <td className="px-10 py-8">
-                  <div className="flex items-center justify-end gap-3">
-                    <button 
-                      onClick={() => setEditingRole(role)}
-                      className="flex items-center gap-3 px-6 py-2.5 bg-[#0f172a]/50 hover:bg-white text-slate-300 hover:text-black font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-slate-800 hover:border-white shadow-xl active:scale-95 group/btn"
-                    >
-                      <Settings className="w-4 h-4 group-hover/btn:rotate-90 transition-transform" />
-                      Edit
-                    </button>
-                    {!role.isSystem && (
-                      <button 
-                        onClick={() => handleDelete(role.slug)}
-                        className="p-2.5 bg-transparent hover:bg-rose-500/10 text-rose-500/50 hover:text-rose-500 rounded-xl transition-all border border-transparent hover:border-rose-500/30"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-[#0f172a]/70 text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] border-b border-slate-800/80">
+                <th className="px-10 py-8">Role Name & Description</th>
+                <th className="px-10 py-8">Permissions</th>
+                <th className="px-10 py-8">Panel</th>
+                <th className="px-10 py-8">Users</th>
+                <th className="px-10 py-8 text-right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {roles.map((role) => {
+                const userCount = employees.filter(e => e.roles.includes(role.slug)).length;
+                return (
+                  <tr key={role.slug} className="group hover:bg-white/[0.03] transition-all">
+                    <td className="px-10 py-8">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <h6 className="font-black text-slate-100 text-sm tracking-tight">{role.name}</h6>
+                          {role.isSystem && (
+                            <span className="px-2.5 py-0.5 bg-slate-800 text-[9px] font-black text-slate-500 rounded uppercase tracking-widest border border-slate-700/50">System</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 font-bold max-w-sm leading-relaxed">{role.description}</p>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-3.5 h-3.5 text-rose-500" />
+                        <span className="text-sm font-black text-slate-300">{role.permissions.length}</span>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${role.panelAccess ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                        {role.panelAccess ? 'Granted' : 'Limited'}
+                      </span>
+                    </td>
+                    <td className="px-10 py-8 font-mono text-[11px] text-slate-400 font-bold">
+                      {userCount}
+                    </td>
+                    <td className="px-10 py-8">
+                      <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => setEditingRole(role)}
+                          className="px-6 py-2 bg-[#0f172a] hover:bg-white text-slate-400 hover:text-black font-black text-[10px] uppercase tracking-widest rounded-xl transition-all border border-slate-800 hover:border-white active:scale-95"
+                        >
+                          Configure
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </motion.div>
   );
 }
-
 function SettingsView({ 
   logoUrl, 
   onLogoChange,
@@ -6715,6 +6825,21 @@ function SettingsView({
   const [enableDesktop, setEnableDesktop] = React.useState(() => localStorage.getItem("notify_desktop") !== "false");
   const [isSaved, setIsSaved] = React.useState(false);
   const [isAppearanceSaved, setIsAppearanceSaved] = React.useState(false);
+  const [isSMTPSaved, setIsSMTPSaved] = React.useState(false);
+
+  // SMTP Settings State
+  const [smtpConfig, setSmtpConfig] = React.useState(() => {
+    const saved = localStorage.getItem("smtp_config");
+    return saved ? JSON.parse(saved) : {
+      host: "mail.aaramaura.com",
+      port: "465",
+      username: "info@aaramaura.com",
+      encryption: "TLS",
+      mailer: "smtp",
+      fromEmail: "info@aaramaura.com",
+      fromName: "OmniInbox"
+    };
+  });
 
   const requestNotificationPermission = async () => {
     if (!("Notification" in window)) {
@@ -6738,6 +6863,7 @@ function SettingsView({
     localStorage.setItem("notify_desktop", String(enableDesktop));
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+    alert("Notification preferences saved!");
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -6760,6 +6886,13 @@ function SettingsView({
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleSaveEmail = () => {
+    localStorage.setItem("smtp_config", JSON.stringify(smtpConfig));
+    setIsSMTPSaved(true);
+    setTimeout(() => setIsSMTPSaved(false), 3000);
+    alert("SMTP configuration updated successfully!");
   };
 
   const handleSave = () => {
@@ -6819,7 +6952,7 @@ function SettingsView({
                 type="checkbox" 
                 checked={enableSound}
                 onChange={(e) => setEnableSound(e.target.checked)}
-                className="mt-1.5 w-5 h-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 transition-all hover:border-emerald-500" 
+                className="mt-1.5 w-5 h-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 transition-all hover:border-emerald-500 cursor-pointer" 
               />
               <div>
                 <p className="text-sm font-bold text-slate-200 group-hover:text-emerald-500 transition-colors tracking-tight">Enable sound alerts</p>
@@ -6831,7 +6964,7 @@ function SettingsView({
                 type="checkbox" 
                 checked={enableDesktop}
                 onChange={(e) => setEnableDesktop(e.target.checked)}
-                className="mt-1.5 w-5 h-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 transition-all hover:border-emerald-500" 
+                className="mt-1.5 w-5 h-5 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500 transition-all hover:border-emerald-500 cursor-pointer" 
               />
               <div>
                 <p className="text-sm font-bold text-slate-200 group-hover:text-emerald-500 transition-colors tracking-tight">Enable desktop notifications</p>
@@ -6848,15 +6981,15 @@ function SettingsView({
               {isSaved ? (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  Saved Successfully!
+                  Saved!
                 </>
-              ) : "Save notification preferences"}
+              ) : "Save preferences"}
             </button>
             <button 
               onClick={requestNotificationPermission}
               className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-8 py-3 rounded-2xl font-bold text-sm transition-all shadow-sm active:scale-95"
             >
-              Enable browser notifications
+              Enable browser permissions
             </button>
           </div>
         </div>
@@ -6876,15 +7009,27 @@ function SettingsView({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>SMTP host</label>
-              <input defaultValue="mail.aaramaura.com" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.host}
+                onChange={(e) => setSmtpConfig({...smtpConfig, host: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>SMTP port</label>
-              <input defaultValue="465" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.port}
+                onChange={(e) => setSmtpConfig({...smtpConfig, port: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>SMTP username</label>
-              <input defaultValue="info@aaramaura.com" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.username}
+                onChange={(e) => setSmtpConfig({...smtpConfig, username: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>SMTP password</label>
@@ -6892,28 +7037,52 @@ function SettingsView({
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>Encryption</label>
-              <select className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium cursor-pointer">
-                <option>TLS</option>
-                <option>SSL</option>
-                <option>None</option>
+              <select 
+                value={smtpConfig.encryption}
+                onChange={(e) => setSmtpConfig({...smtpConfig, encryption: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium cursor-pointer"
+              >
+                <option value="TLS">TLS</option>
+                <option value="SSL">SSL</option>
+                <option value="None">None</option>
               </select>
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>Mailer</label>
-              <input defaultValue="smtp" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.mailer}
+                onChange={(e) => setSmtpConfig({...smtpConfig, mailer: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>From email</label>
-              <input defaultValue="info@aaramaura.com" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.fromEmail}
+                onChange={(e) => setSmtpConfig({...smtpConfig, fromEmail: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
             <div className="space-y-3 font-bold uppercase tracking-widest text-[10px] text-slate-500">
               <label>From name</label>
-              <input defaultValue="Laravel" className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" />
+              <input 
+                value={smtpConfig.fromName}
+                onChange={(e) => setSmtpConfig({...smtpConfig, fromName: e.target.value})}
+                className="w-full bg-[#0f172a] border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 outline-none focus:border-rose-600 transition-all font-medium placeholder:text-slate-700" 
+              />
             </div>
           </div>
 
-          <button className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-3 rounded-2xl font-bold text-sm shadow-lg shadow-rose-900/20 transition-all active:scale-95">
-            Save email configuration
+          <button 
+            onClick={handleSaveEmail}
+            className={`px-8 py-3 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 flex items-center gap-2 ${isSMTPSaved ? 'bg-emerald-600 text-white' : 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-900/20'}`}
+          >
+            {isSMTPSaved ? (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                Config Saved!
+              </>
+            ) : "Save email configuration"}
           </button>
         </div>
       </section>
@@ -7036,7 +7205,7 @@ function SettingsView({
               {isAppearanceSaved ? (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  Saved!
+                  Branding Saved!
                 </>
               ) : "Save appearance"}
             </button>
@@ -7046,3 +7215,5 @@ function SettingsView({
     </motion.div>
   );
 }
+
+
