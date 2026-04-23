@@ -58,6 +58,7 @@ import {
   Target,
   Star,
   DollarSign,
+  Lock,
   Layers,
   ListFilter,
   History,
@@ -74,7 +75,21 @@ import {
   Info,
   Calendar,
   ExternalLink,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOff,
+  PhoneForwarded,
 } from "lucide-react";
+
+interface Call {
+  id: string;
+  callerName: string;
+  callerAvatar: string;
+  platform: string;
+  status: 'incoming' | 'active' | 'missed' | 'ended';
+  duration?: number;
+  startTime: number;
+}
 
 interface Order {
   id: string;
@@ -197,7 +212,29 @@ interface Role {
   permissions: string[]; // slugs
 }
 
+interface SubscriptionPackage {
+  slug: 'lite' | 'pro' | 'growth' | 'enterprise';
+  name: string;
+  price: string;
+  period: string;
+  limits: {
+    members: number;
+    messages: number;
+    channels: number;
+  };
+}
+
 export default function App() {
+  const [activePlan, setActivePlan] = useState<SubscriptionPackage>(() => {
+    const saved = localStorage.getItem("active_plan");
+    return saved ? JSON.parse(saved) : {
+      slug: 'lite',
+      name: "Lite",
+      price: "$19",
+      period: "/month",
+      limits: { members: 2, messages: 1000, channels: 2 }
+    };
+  });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(() => localStorage.getItem("app_logo"));
   const [faviconUrl, setFaviconUrl] = useState<string | null>(() => localStorage.getItem("app_favicon"));
@@ -369,6 +406,8 @@ export default function App() {
     setRoles={setRoles}
     permissions={permissions}
     setPermissions={setPermissions}
+    activePlan={activePlan}
+    setActivePlan={setActivePlan}
   />;
 }
 
@@ -387,7 +426,9 @@ function Dashboard({
   roles,
   setRoles,
   permissions,
-  setPermissions
+  setPermissions,
+  activePlan,
+  setActivePlan
 }: { 
   onLogout: () => void;
   logoUrl: string | null;
@@ -404,11 +445,54 @@ function Dashboard({
   setRoles: React.Dispatch<React.SetStateAction<Role[]>>;
   permissions: Permission[];
   setPermissions: React.Dispatch<React.SetStateAction<Permission[]>>;
+  activePlan: SubscriptionPackage;
+  setActivePlan: React.Dispatch<React.SetStateAction<SubscriptionPackage>>;
 }) {
   const [currentView, setCurrentView] = useState("Home");
   const [facebookAccessToken, setFacebookAccessToken] = useState<string>("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isSidebarHovered, setIsSidebarHovered] = useState(false);
+  const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+
+  useEffect(() => {
+    let interval: any;
+    if (activeCall && activeCall.status === 'active') {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+    }
+    return () => clearInterval(interval);
+  }, [activeCall]);
+
+  const handleStartCall = (name: string, avatar: string, platform: string) => {
+    setActiveCall({
+      id: Math.random().toString(36).substr(2, 9),
+      callerName: name,
+      callerAvatar: avatar,
+      platform,
+      status: 'incoming',
+      startTime: Date.now()
+    });
+  };
+
+  const handleAcceptCall = () => {
+    if (activeCall) {
+      setActiveCall({ ...activeCall, status: 'active' });
+    }
+  };
+
+  const handleEndCall = () => {
+    setActiveCall(null);
+  };
+
+  const formatDuration = (seconds: number) => {
+    const min = Math.floor(seconds / 60);
+    const sec = seconds % 60;
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
 
   const isExpanded = !isSidebarCollapsed || isSidebarHovered;
 
@@ -592,7 +676,89 @@ function Dashboard({
   ];
 
   return (
-    <div className="flex min-h-screen font-sans text-slate-100" style={{ backgroundColor: appColors.pageBg }}>
+    <>
+      <AnimatePresence>
+        {activeCall && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed bottom-8 right-8 z-[100] w-80 bg-[#1e293b] border border-slate-700 rounded-[2.5rem] shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden"
+          >
+            <div className="p-8 flex flex-col items-center text-center">
+              <div className="relative mb-6">
+                <div className="w-24 h-24 rounded-full border-4 border-emerald-500/20 p-1">
+                  <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-3xl font-black text-emerald-400">
+                    {activeCall.callerAvatar}
+                  </div>
+                </div>
+                {activeCall.status === 'incoming' && (
+                  <motion.div 
+                    animate={{ scale: [1, 1.2, 1] }} 
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    className="absolute inset-0 rounded-full border-4 border-emerald-500/50" 
+                  />
+                )}
+              </div>
+
+              <h4 className="text-xl font-black text-white tracking-tight">{activeCall.callerName}</h4>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                {activeCall.status === 'incoming' ? `Incoming ${activeCall.platform} Call` : `Active ${activeCall.platform} Call`}
+              </p>
+
+              {activeCall.status === 'active' && (
+                <div className="mt-4 px-4 py-1.5 bg-emerald-500/10 rounded-full">
+                  <span className="text-emerald-400 font-mono font-bold text-sm">{formatDuration(callDuration)}</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 mt-8 w-full">
+                {activeCall.status === 'incoming' ? (
+                  <>
+                    <button 
+                      onClick={handleEndCall}
+                      className="flex-1 py-4 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-2xl transition-all flex flex-col items-center gap-1 group"
+                    >
+                      <PhoneOff className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Decline</span>
+                    </button>
+                    <button 
+                      onClick={handleAcceptCall}
+                      className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl transition-all flex flex-col items-center gap-1 shadow-lg shadow-emerald-500/20 group animate-pulse"
+                    >
+                      <PhoneCall className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Accept</span>
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex flex-col w-full gap-4">
+                    <div className="flex items-center justify-center gap-6">
+                      <button className="w-12 h-12 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl flex items-center justify-center transition-all">
+                        <Mic className="w-5 h-5" />
+                      </button>
+                      <button className="w-12 h-12 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl flex items-center justify-center transition-all">
+                        <Video className="w-5 h-5" />
+                      </button>
+                      <button className="w-12 h-12 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl flex items-center justify-center transition-all">
+                        <Volume2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <button 
+                      onClick={handleEndCall}
+                      className="w-full py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-rose-900/20 group"
+                    >
+                      <PhoneOff className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+                      <span className="text-xs font-black uppercase tracking-widest">End Call</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex min-h-screen font-sans text-slate-100" style={{ backgroundColor: appColors.pageBg }}>
       {/* Sidebar */}
       <aside 
         onMouseEnter={() => setIsSidebarHovered(true)}
@@ -626,8 +792,53 @@ function Dashboard({
         </div>
 
         <div className="flex-1 px-3 space-y-6 pt-4 overflow-y-auto no-scrollbar overflow-x-hidden">
+          {/* Active Plan Summary */}
+          {isExpanded && (
+            <div className="px-3 mb-6">
+              <div 
+                onClick={() => setCurrentView("Packages")}
+                className="bg-slate-900/50 border border-white/10 rounded-2xl p-4 cursor-pointer hover:bg-slate-900/80 transition-colors group"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-black text-white/40 uppercase tracking-widest">Plan</span>
+                  <div className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                    activePlan.slug === 'lite' ? 'bg-slate-700 text-slate-300' :
+                    activePlan.slug === 'pro' ? 'bg-rose-600 text-white' :
+                    activePlan.slug === 'growth' ? 'bg-emerald-600 text-white' :
+                    'bg-sky-600 text-white'
+                  }`}>
+                    {activePlan.name}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex-1 space-y-1">
+                    <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                      <div className={`h-full ${activePlan.slug === 'pro' ? 'bg-rose-500' : 'bg-emerald-500'} w-2/3`}></div>
+                    </div>
+                    <p className="text-[9px] text-white/30 font-bold uppercase">66% Usage</p>
+                  </div>
+                  <ChevronRight className="w-3 h-3 text-white/20 group-hover:text-white transition-colors" />
+                </div>
+              </div>
+            </div>
+          )}
           <div>
-            {isExpanded && <p className="px-3 text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">Menu</p>}
+            {isExpanded && <p className="px-3 text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">Internal Tools</p>}
+            <button 
+              onClick={() => handleStartCall("Customer Support Test", "CS", "WhatsApp")}
+              className={`w-full group flex items-center ${isExpanded ? 'px-4' : 'justify-center'} py-3 mb-1 rounded-xl transition-all hover:bg-emerald-500/10 text-emerald-400`}
+            >
+              <div className={`${isExpanded ? 'mr-3' : ''} transition-all group-hover:scale-110`}>
+                <PhoneIncoming className="w-5 h-5" />
+              </div>
+              {isExpanded && (
+                <div className="flex flex-col items-start min-w-0">
+                  <span className="text-[14px] font-bold tracking-tight">Simulate Call</span>
+                  <span className="text-[10px] opacity-60 font-bold uppercase tracking-wider">Demo Tool</span>
+                </div>
+              )}
+            </button>
+            {isExpanded && <p className="px-3 text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 mt-4">Menu</p>}
             {sidebarItems.slice(0, 8).map((item, i) => (
               <SidebarItem 
                 key={i} 
@@ -847,6 +1058,8 @@ function Dashboard({
               <ConnectionsView 
                 platforms={connectedPlatforms}
                 setPlatforms={setConnectedPlatforms}
+                activePlan={activePlan}
+                setCurrentView={setCurrentView}
                 onConnectWhatsApp={() => setCurrentView("WhatsApp")} 
                 onConnectFacebook={() => setCurrentView("Facebook / Messenger")} 
                 onConnectInstagram={() => setCurrentView("Instagram")}
@@ -862,6 +1075,7 @@ function Dashboard({
                 chats={chats}
                 setChats={setChats}
                 facebookAccessToken={facebookAccessToken}
+                onStartCall={handleStartCall}
               />
             ) : currentView === "WhatsApp" ? (
               <WhatsAppView 
@@ -923,7 +1137,7 @@ function Dashboard({
             ) : currentView === "Manual Migration" ? (
               <ManualMigrationView />
             ) : currentView === "Packages" ? (
-              <PackagesView />
+              <PackagesView activePlan={activePlan} setActivePlan={setActivePlan} />
             ) : currentView === "Profile" ? (
               <ProfileView />
             ) : currentView === "Settings" ? (
@@ -961,6 +1175,7 @@ function Dashboard({
         </div>
       </main>
     </div>
+    </>
   );
 }
 
@@ -1993,6 +2208,8 @@ function EditAccountView({ platformId, account, onSave, onCancel }: any) {
 function ConnectionsView({ 
   platforms, 
   setPlatforms,
+  activePlan,
+  setCurrentView,
   onConnectWhatsApp, 
   onConnectFacebook, 
   onConnectInstagram,
@@ -2002,6 +2219,8 @@ function ConnectionsView({
 }: { 
   platforms: ConnectedPlatform[],
   setPlatforms: React.Dispatch<React.SetStateAction<ConnectedPlatform[]>>,
+  activePlan: SubscriptionPackage,
+  setCurrentView: (view: string) => void,
   onConnectWhatsApp: () => void, 
   onConnectFacebook: () => void, 
   onConnectInstagram: () => void,
@@ -2014,6 +2233,9 @@ function ConnectionsView({
   const [addingAccountPlatform, setAddingAccountPlatform] = useState<string | null>(null);
   const [editingAccount, setEditingAccount] = useState<{ platformId: string, account: PlatformAccount } | null>(null);
   const [newAccountName, setNewAccountName] = useState("");
+
+  const totalConnectedChannels = platforms.reduce((acc, p) => acc + p.accounts.length, 0);
+  const isLimitReached = totalConnectedChannels >= activePlan.limits.channels;
 
   const platformMeta: Record<string, { icon: React.ReactNode, color: string, type: string }> = {
     whatsapp: { icon: <Phone className="w-6 h-6" />, color: "text-emerald-400 bg-emerald-500/10", type: "messaging" },
@@ -2085,8 +2307,15 @@ function ConnectionsView({
       {/* Header & Filter Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h3 className="text-3xl font-bold text-white tracking-tight">Connections Central</h3>
-          <p className="text-slate-400 mt-1 max-w-sm">Advanced multi-channel hub for API management and data synchronization status.</p>
+          <div className="flex items-center gap-3 mb-1">
+            <h3 className="text-3xl font-bold text-white tracking-tight">Connections Central</h3>
+            <div className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-current ${
+              totalConnectedChannels >= activePlan.limits.channels ? 'text-rose-400 bg-rose-400/10' : 'text-emerald-400 bg-emerald-400/10'
+            }`}>
+              {totalConnectedChannels} / {activePlan.limits.channels} Channels Used
+            </div>
+          </div>
+          <p className="text-slate-400 max-w-sm">Advanced multi-channel hub for API management and data synchronization status.</p>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3">
@@ -2105,6 +2334,31 @@ function ConnectionsView({
           </button>
         </div>
       </div>
+
+      {/* Plan Limit Alert */}
+      {isLimitReached && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-rose-500/10 border border-rose-500/20 p-6 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl"
+        >
+          <div className="flex items-center gap-5">
+            <div className="w-12 h-12 bg-rose-500 rounded-2xl flex items-center justify-center shadow-lg shadow-rose-900/40 shrink-0">
+              <Zap className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h5 className="font-bold text-white text-lg">Subscription Limit Reached</h5>
+              <p className="text-sm text-slate-400 font-medium leading-relaxed">Your current <span className="text-rose-400 font-bold uppercase">{activePlan.name}</span> plan only supports {activePlan.limits.channels} connected channels. Upgrade to connect more accounts.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setCurrentView("Packages")}
+            className="px-8 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all active:scale-95 whitespace-nowrap"
+          >
+            Upgrade Now
+          </button>
+        </motion.div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2276,6 +2530,26 @@ function ConnectionsView({
                 ) : (
                   <div className="space-y-4">
                     <button 
+                      onClick={() => !isLimitReached && setAddingAccountPlatform(platform.id)}
+                      disabled={isLimitReached}
+                      className={`w-full py-4 border-2 border-dashed ${
+                        isLimitReached ? 'border-slate-800 text-slate-600 cursor-not-allowed' : 'border-slate-800/80 text-slate-500 hover:border-blue-500/30 hover:text-blue-400 hover:bg-blue-500/5'
+                      } rounded-2xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all`}
+                    >
+                      {isLimitReached ? (
+                        <>
+                          <Lock className="w-4 h-4" />
+                          Plan Limit Reached
+                        </>
+                      ) : (
+                        <>
+                          <PlusCircle className="w-4 h-4" />
+                          Add Channel Account
+                        </>
+                      )}
+                    </button>
+
+                    <button 
                       onClick={() => {
                         if (platform.id === 'whatsapp') onConnectWhatsApp();
                         else if (platform.id === 'messenger' || platform.id === 'facebook') onConnectFacebook();
@@ -2287,15 +2561,6 @@ function ConnectionsView({
                       className="mt-4 w-full py-2 bg-slate-900/50 border border-slate-800 hover:border-slate-600 rounded-xl text-[9px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-200 transition-all"
                     >
                       Manage API & Config
-                    </button>
-
-                    <button 
-                      onClick={() => setAddingAccountPlatform(platform.id)}
-                      className="w-full py-4 bg-slate-900 border border-slate-800 hover:border-blue-600/50 hover:bg-blue-600/5 rounded-2xl text-slate-400 hover:text-blue-400 font-bold transition-all flex items-center justify-center gap-3 group/btn relative overflow-hidden"
-                    >
-                      <div className="absolute inset-0 bg-blue-600/0 group-hover/btn:bg-blue-600/5 transition-all"></div>
-                      <PlusCircle className="w-5 h-5 transition-transform group-hover/btn:rotate-90 group-hover/btn:scale-110" />
-                      <span className="text-[10px] uppercase tracking-[0.2em] font-black">Add New Account</span>
                     </button>
                   </div>
                 )}
@@ -3935,13 +4200,14 @@ function XView({ setPlatforms, setChats, onSuccess }: { setPlatforms: any, setCh
   );
 }
 
-function ChatsView({ setOrders, setLeads, employees, chats, setChats, facebookAccessToken }: { 
+function ChatsView({ setOrders, setLeads, employees, chats, setChats, facebookAccessToken, onStartCall }: { 
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>, 
   setLeads: React.Dispatch<React.SetStateAction<Lead[]>>,
   employees: Employee[],
   chats: Chat[],
   setChats: React.Dispatch<React.SetStateAction<Chat[]>>,
-  facebookAccessToken: string
+  facebookAccessToken: string,
+  onStartCall: (name: string, avatar: string, platform: string) => void
 }) {
   const [selectedChat, setSelectedChat] = useState<number | null>(chats.length > 0 ? chats[0].id : null);
   const [messageText, setMessageText] = useState("");
@@ -4558,6 +4824,21 @@ function ChatsView({ setOrders, setLeads, employees, chats, setChats, facebookAc
             
             <div className="flex items-center gap-4 text-slate-400">
               <div className="flex items-center gap-2 bg-slate-800/40 p-1.5 rounded-xl border border-slate-700/50">
+                <button 
+                  onClick={() => onStartCall(currentChat.name, currentChat.avatar, currentChat.platform)}
+                  className="p-2 border border-slate-700 rounded-lg hover:bg-emerald-600/20 hover:text-emerald-500 transition-all"
+                  title="Audio Call"
+                >
+                  <Phone className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => onStartCall(currentChat.name, currentChat.avatar, currentChat.platform)}
+                  className="p-2 border border-slate-700 rounded-lg hover:bg-blue-600/20 hover:text-blue-400 transition-all"
+                  title="Video Call"
+                >
+                  <Video className="w-4 h-4" />
+                </button>
+                <div className="w-[1px] h-4 bg-slate-700 mx-1" />
                 <button 
                   onClick={() => currentChat && toggleDone(currentChat.id)}
                   className={`p-2 border rounded-lg transition-all ${currentChat?.isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-700 hover:bg-emerald-600/20 hover:text-emerald-500'}`}
@@ -6158,21 +6439,54 @@ function ManualMigrationView() {
   );
 }
 
-function PackagesView() {
-  const packages = [
+function PackagesView({ 
+  activePlan, 
+  setActivePlan 
+}: { 
+  activePlan: SubscriptionPackage, 
+  setActivePlan: React.Dispatch<React.SetStateAction<SubscriptionPackage>> 
+}) {
+  const packages: SubscriptionPackage[] = [
     {
+      slug: "lite",
       name: "Lite",
       price: "$19",
       period: "/month",
+      limits: { members: 2, messages: 1000, channels: 2 }
+    },
+    {
+      slug: "pro",
+      name: "Pro",
+      price: "$49",
+      period: "/month",
+      limits: { members: 5, messages: 5000, channels: 5 }
+    },
+    {
+      slug: "growth",
+      name: "Growth",
+      price: "$99",
+      period: "/month",
+      limits: { members: 15, messages: 25000, channels: 10 }
+    },
+    {
+      slug: "enterprise",
+      name: "Enterprise",
+      price: "Custom",
+      period: "",
+      limits: { members: 100, messages: 1000000, channels: 50 }
+    }
+  ];
+
+  const packageDetails = [
+    {
+      slug: "lite",
       description: "Perfect for startups and small teams beginning their multi-channel journey.",
       features: ["2 Team Members", "WhatsApp API Access", "1,000 Messages/month", "Standard Support", "Basic Analytics"],
       buttonColor: "bg-slate-700 hover:bg-slate-600",
       icon: <Zap className="w-6 h-6 text-slate-400" />
     },
     {
-      name: "Pro",
-      price: "$49",
-      period: "/month",
+      slug: "pro",
       description: "Our most popular choice for growing businesses needing scale.",
       features: ["5 Team Members", "Full Omni-Channel Inbox", "5,000 Messages/month", "Priority Support", "Advanced Analytics", "Custom Permissions"],
       buttonColor: "bg-rose-600 hover:bg-rose-700",
@@ -6180,18 +6494,14 @@ function PackagesView() {
       icon: <Zap className="w-6 h-6 text-rose-400" />
     },
     {
-      name: "Growth",
-      price: "$99",
-      period: "/month",
+      slug: "growth",
       description: "Advanced tools and security for high-volume sales and support teams.",
       features: ["15 Team Members", "Advanced Automatons", "Unlimited History", "24/7 Priority Support", "Dedicated Account Manager", "White-label Options"],
       buttonColor: "bg-emerald-600 hover:bg-emerald-700",
       icon: <Zap className="w-6 h-6 text-emerald-400" />
     },
     {
-      name: "Enterprise",
-      price: "Custom",
-      period: "",
+      slug: "enterprise",
       description: "Enterprise-grade control and compliance for large organizations.",
       features: ["Unlimited Teams", "Custom API Integrations", "SLA Guarantee", "On-premise Options", "SSO & Advanced Security", "Custom Training"],
       buttonColor: "bg-sky-600 hover:bg-sky-700",
@@ -6199,85 +6509,106 @@ function PackagesView() {
     }
   ];
 
+  const handleSelectPackage = (pkg: SubscriptionPackage) => {
+    if (activePlan.slug === pkg.slug) return;
+    
+    if (window.confirm(`Are you sure you want to switch to the ${pkg.name} plan?`)) {
+      setActivePlan(pkg);
+      localStorage.setItem("active_plan", JSON.stringify(pkg));
+      alert(`Your workspace has been upgraded to ${pkg.name}! Access limits updated.`);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="space-y-12"
     >
-      {/* Header Section */}
       <div className="flex flex-col space-y-4 max-w-2xl">
         <h3 className="text-3xl font-black text-white tracking-tight flex items-center gap-4">
           <CreditCard className="w-8 h-8 text-rose-500" /> Subscription Packages
         </h3>
         <p className="text-sm text-slate-400 leading-relaxed font-medium">
-          Choose the right plan for your business. Whether you're just starting or scaling globally, OmniInbox has a package that fits your needs. 
-          <br />
-          All plans include 14-day free trial on core features.
+          The selected plan affects your team size and message limits. Current plan: <span className="text-rose-500 font-black uppercase">{activePlan.name}</span>
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-        {packages.map((pkg, i) => (
-          <motion.div
-            key={pkg.name}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className={`relative bg-[#1e293b]/40 border ${pkg.featured ? 'border-rose-500/50 shadow-[0_0_40px_rgba(240,83,64,0.1)]' : 'border-slate-800/80'} rounded-[2.5rem] p-8 flex flex-col space-y-8 backdrop-blur-md group transition-all hover:translate-y-[-8px] hover:border-slate-700`}
-          >
-            {pkg.featured && (
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full shadow-lg">
-                Most Popular
+        {packages.map((pkg, i) => {
+          const details = packageDetails.find(d => d.slug === pkg.slug)!;
+          const isActive = activePlan.slug === pkg.slug;
+
+          return (
+            <motion.div
+              key={pkg.slug}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className={`relative bg-[#1e293b]/40 border ${details.featured ? 'border-rose-500/50 shadow-[0_0_40px_rgba(240,83,64,0.1)]' : 'border-slate-800/80'} ${isActive ? 'border-emerald-500/50 ring-2 ring-emerald-500/20' : ''} rounded-[2.5rem] p-8 flex flex-col space-y-8 backdrop-blur-md group transition-all hover:translate-y-[-8px] hover:border-slate-700`}
+            >
+              {isActive && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full shadow-lg flex items-center gap-2">
+                  <Check className="w-3 h-3" /> Active Plan
+                </div>
+              )}
+              
+              {!isActive && details.featured && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full shadow-lg">
+                  Most Popular
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className={`w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center shadow-inner`}>
+                  {details.icon}
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold text-white">{pkg.name}</h4>
+                  <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-1">Plan</p>
+                </div>
               </div>
-            )}
 
-            <div className="space-y-4">
-              <div className={`w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center shadow-inner`}>
-                {pkg.icon}
+              <div className="flex items-baseline gap-1">
+                <span className="text-4xl font-black text-white tracking-tighter">{pkg.price}</span>
+                <span className="text-xs text-slate-500 font-bold">{pkg.period}</span>
               </div>
-              <div>
-                <h4 className="text-xl font-bold text-white">{pkg.name}</h4>
-                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-1">Plan</p>
-              </div>
-            </div>
 
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-black text-white tracking-tighter">{pkg.price}</span>
-              <span className="text-xs text-slate-500 font-bold">{pkg.period}</span>
-            </div>
+              <p className="text-xs text-slate-400 leading-relaxed font-medium pb-4 border-b border-slate-800/50">
+                {details.description}
+              </p>
 
-            <p className="text-xs text-slate-400 leading-relaxed font-medium pb-4 border-b border-slate-800/50">
-              {pkg.description}
-            </p>
+              <ul className="flex-1 space-y-4">
+                {details.features.map((feature, j) => (
+                  <li key={j} className="flex items-center gap-3 text-[11px] font-bold text-slate-300">
+                    <div className="w-4 h-4 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                      <Check className="w-2.5 h-2.5 text-emerald-500" />
+                    </div>
+                    {feature}
+                  </li>
+                ))}
+              </ul>
 
-            <ul className="flex-1 space-y-4">
-              {pkg.features.map((feature, j) => (
-                <li key={j} className="flex items-center gap-3 text-[11px] font-bold text-slate-300">
-                  <div className="w-4 h-4 rounded-full bg-emerald-500/10 flex items-center justify-center">
-                    <Check className="w-2.5 h-2.5 text-emerald-500" />
-                  </div>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-
-            <button className={`w-full ${pkg.buttonColor} text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-xl`}>
-              Purchase {pkg.name}
-            </button>
-          </motion.div>
-        ))}
+              <button 
+                onClick={() => handleSelectPackage(pkg)}
+                disabled={isActive}
+                className={`w-full ${isActive ? 'bg-emerald-600/20 text-emerald-500 cursor-default' : `${details.buttonColor} text-white`} py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-xl`}
+              >
+                {isActive ? "Currently Active" : activePlan.slug === 'enterprise' ? "Downgrade" : "Select Package"}
+              </button>
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* Trust Badge / Footer */}
       <div className="bg-[#1e293b]/30 border border-slate-800 p-8 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center border border-slate-800">
             <Shield className="w-6 h-6 text-emerald-400" />
           </div>
           <div>
-            <h6 className="font-bold text-white">Secure Payments & Data Safety</h6>
-            <p className="text-xs text-slate-500 font-medium">All transition processed via AES-256 encryption. We never store credit card details.</p>
+            <h6 className="font-bold text-white">Resource Allocation</h6>
+            <p className="text-xs text-slate-500 font-medium">Your current plan allows up to <span className="text-white font-black">{activePlan.limits.members}</span> seats and <span className="text-white font-black">{activePlan.limits.channels}</span> channel integrations.</p>
           </div>
         </div>
         <div className="flex gap-4">
